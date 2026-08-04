@@ -69,6 +69,6 @@ jobs:
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: trigger-set-image.yml
-          repo: quant9527/deploy
+          repo: quant9527/ops
           inputs: '{"chart": "${{ env.APP_NAME }}", "image": "${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ steps.image_tag.outputs.new_image_tag }}"}'
           token: ${{ secrets.WORKFLOW_ACCESS_ALL_MY_REPO }}
