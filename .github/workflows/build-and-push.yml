@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_NAME: qdata
+  DOCKER_REPO: qdata
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/
+            ~/.cargo/git/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+      - name: Cargo check
+        run: cargo check
+      - name: Cargo test
+        run: cargo test
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set outputs
+        id: vars
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >>$GITHUB_OUTPUT
+          echo "branch=$(echo ${GITHUB_REF#refs/heads/})" >>$GITHUB_OUTPUT
+      - name: Set image tag
+        id: image_tag
+        run: |
+          echo "new_image_tag=${{ env.APP_NAME }}-${{ steps.vars.outputs.branch }}-${{ steps.vars.outputs.sha_short }}" >>$GITHUB_OUTPUT
+          echo "branch_sha=${{ steps.vars.outputs.branch }}-${{ steps.vars.outputs.sha_short }}" >>$GITHUB_OUTPUT
+      - id: build-push-image
+        uses: quant9527/deploy-action@main
+        with:
+          registry_username: ${{ vars.DOCKERHUB_USERNAME }}
+          registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
+          tag: ${{ vars.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:${{ steps.image_tag.outputs.new_image_tag }},${{ vars.DOCKERHUB_USERNAME }}/${{ env.DOCKER_REPO }}:latest
+          file: ./Dockerfile
+          platforms: linux/amd64
+      - run: echo new image is ${{ steps.build-push-image.outputs.new-image }}
+        shell: bash
+      - name: Invoke deploy workflow
+        if: github.ref == 'refs/heads/main'
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: trigger-set-image.yml
+          repo: quant9527/deploy
+          inputs: '{"chart": "${{ env.APP_NAME }}", "image": "${{ vars.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ steps.image_tag.outputs.new_image_tag }}"}'
+          token: ${{ secrets.WORKFLOW_ACCESS_ALL_MY_REPO }}
