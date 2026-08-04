@@ -1,0 +1,25 @@
+# Build artifacts
+target/
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+
+# State/config
+.omc/
+.claude/
+
+# Documentation
+*.md
+note.txt
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

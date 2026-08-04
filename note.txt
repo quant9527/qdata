@@ -1,0 +1,2 @@
+BorrowedValue想转换成实际的类型比如i32可以这样
+if let BorrowedValue::Double(v) = value { opens.push(v) }

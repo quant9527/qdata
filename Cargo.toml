@@ -1,0 +1,27 @@
+[package]
+name = "data-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-stream = "0.3"  # Async stream utilities
+async-trait = "0.1"  # Async trait support
+taos = { version = "0.12.3", default-features = false, features = ["optin"] }  # TDengine官方Rust客户端（optin = dlopen 系统 libtaos.so，原生 TCP 协议）
+taos-query = "0.12.4"  # 查询功能支持
+arrow = { version = "55.2", features = ["prettyprint"] }  # Arrow数据格式
+arrow-flight = { version = "55.2" }  # Arrow Flight协议支持
+prost = "0.14.1"  # Protocol Buffers
+anyhow = "1.0"  # 错误处理
+futures = "0.3"  # 异步流处理
+tracing = "0.1"  # 结构化日志
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }  # 日志配置
+serde = { version = "1.0", features = ["derive"] }  # 序列化支持
+tokio = { version = "1.0", default-features = false, features = ["macros", "rt", "rt-multi-thread"] }
+tokio-stream = "0.1"  # Tokio stream utilities
+tonic = { version = "0.12.3", default-features = false, features = ["transport", "codegen", "prost"] }
+serde_json = "1.0.140"
+chrono = { version = "0.4", features = ["serde"] }
+redis = { version = "0.27.5", features = ["tokio-comp", "connection-manager"] }
+
+[profile.release]
+debug = true  # 保持调试符号
