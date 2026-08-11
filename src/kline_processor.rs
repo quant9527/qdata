@@ -188,22 +188,32 @@ impl SegData {
                 close_max_local = i;
             }
         }
-        // 与 numpy 一致的 NaN 传播语义（np.max/min 遇 NaN 得 NaN；
-        // 客户端拿 NaN 会回退本地计算，保证与生产路径逐点一致）
-        fn fold_max_nan(w: &[f64]) -> f64 {
-            w.iter().copied().fold(f64::NEG_INFINITY, |a, b| {
-                if a.is_nan() || b.is_nan() { f64::NAN } else { a.max(b) }
-            })
+
+        // pct 极值区间：[start, sc_idx)，覆盖完整段移动。
+        // 单次遍历同时取 max/min；遇 NaN 立即传播（与 numpy np.max/np.min 一致）。
+        let pct_window = match pct_change.get(close_lo..close_hi) {
+            Some(w) if !w.is_empty() => w,
+            _ => &[],
+        };
+        let mut pct_max = f64::NEG_INFINITY;
+        let mut pct_min = f64::INFINITY;
+        let mut pct_has_nan = false;
+        for &c in pct_window.iter() {
+            if c.is_nan() {
+                pct_has_nan = true;
+                break;
+            }
+            if c > pct_max {
+                pct_max = c;
+            }
+            if c < pct_min {
+                pct_min = c;
+            }
         }
-        fn fold_min_nan(w: &[f64]) -> f64 {
-            w.iter().copied().fold(f64::INFINITY, |a, b| {
-                if a.is_nan() || b.is_nan() { f64::NAN } else { a.min(b) }
-            })
-        }
-        // pct_max/min: [start, sc_idx) 覆盖完整段移动
-        let (pct_max, pct_min) = match pct_change.get(close_lo..close_hi) {
-            Some(w) if !w.is_empty() => (fold_max_nan(w), fold_min_nan(w)),
-            _ => (f64::NAN, f64::NAN),
+        let (pct_max, pct_min) = if pct_has_nan || pct_window.is_empty() {
+            (f64::NAN, f64::NAN)
+        } else {
+            (pct_max, pct_min)
         };
         Self {
             start,
