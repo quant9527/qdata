@@ -154,7 +154,8 @@ pub(crate) struct SegData {
 
 impl SegData {
     /// start / end / high / low 由调用方传入（来自状态机累加极值）。
-    /// close_min / close_max / close_min_idx / close_max_idx 从 [start, end] 区间 close 数组扫出。
+    /// close_min / close_max / close_min_idx / close_max_idx / pct_max / pct_min
+    /// 均从 [start, sc_idx) 区间扫出，覆盖完整段移动（与 quant-lab `lab.chan` 对齐）。
     fn compute(
         jc_idx: i64,
         sc_idx: i64,
@@ -167,16 +168,17 @@ impl SegData {
         direction: &'static str,
     ) -> Self {
         let n = closes.len();
-        let lo = start.max(0).min(n as i64 - 1) as usize;
-        let hi = end.max(0).min(n as i64 - 1) as usize;
-        let (lo, hi) = if lo > hi { (hi, lo) } else { (lo, hi) };
-        let window = &closes[lo..=hi];
+        let close_lo = start.max(0).min(n as i64 - 1) as usize;
+        let close_hi = sc_idx.max(0).min(n as i64).max(close_lo as i64 + 1) as usize;
+
+        // close 极值区间：[start, sc_idx)，覆盖完整段移动。
+        let close_window = &closes[close_lo..close_hi];
         // 单次遍历同时取极值与极值位置
         let mut close_min = f64::INFINITY;
         let mut close_max = f64::NEG_INFINITY;
         let mut close_min_local: usize = 0;
         let mut close_max_local: usize = 0;
-        for (i, &c) in window.iter().enumerate() {
+        for (i, &c) in close_window.iter().enumerate() {
             if c < close_min {
                 close_min = c;
                 close_min_local = i;
@@ -198,8 +200,8 @@ impl SegData {
                 if a.is_nan() || b.is_nan() { f64::NAN } else { a.min(b) }
             })
         }
-        // pct_max/min: [start, end] 含端点（与 quant-lab pct_change[start:end+1] 一致）
-        let (pct_max, pct_min) = match pct_change.get(lo..=hi) {
+        // pct_max/min: [start, sc_idx) 覆盖完整段移动
+        let (pct_max, pct_min) = match pct_change.get(close_lo..close_hi) {
             Some(w) if !w.is_empty() => (fold_max_nan(w), fold_min_nan(w)),
             _ => (f64::NAN, f64::NAN),
         };
@@ -212,8 +214,8 @@ impl SegData {
             sc_idx,
             close_min,
             close_max,
-            close_min_idx: lo as i64 + close_min_local as i64,
-            close_max_idx: lo as i64 + close_max_local as i64,
+            close_min_idx: close_lo as i64 + close_min_local as i64,
+            close_max_idx: close_lo as i64 + close_max_local as i64,
             direction,
             pct_max,
             pct_min,
@@ -1170,6 +1172,27 @@ mod seg_binary_layout_tests {
 
         // 避免 unused 警告：fmt 在文档注释里被引用
         let _ = fmt;
+    }
+
+    #[test]
+    fn seg_close_min_scans_until_sc_idx() {
+        // 下跌段：start=0, end=2（段内价格极点），但 sc_idx=5 才是下一段金叉。
+        // close_min / close_max / pct_max / pct_min 均应覆盖完整段移动 [start, sc_idx)，
+        // 而不是仅 [start, end]。
+        let closes = vec![10.0, 9.0, 8.0, 7.0, 6.0, 11.0];
+        let pct_change = vec![0.0, 0.0, 0.0, 5.0, -3.0, 0.0];
+        let seg = SegData::compute(
+            2, 5, 0, 2,
+            10.0, 6.0,
+            &closes, &pct_change, "down",
+        );
+        assert_eq!(seg.close_min, 6.0);
+        assert_eq!(seg.close_min_idx, 4);
+        assert_eq!(seg.close_max, 10.0);
+        assert_eq!(seg.close_max_idx, 0);
+        // pct 也应按 [start, sc_idx) = [0, 5) 计算，覆盖 5.0 与 -3.0
+        assert_eq!(seg.pct_max, 5.0);
+        assert_eq!(seg.pct_min, -3.0);
     }
 
     #[test]
