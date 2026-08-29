@@ -1,7 +1,7 @@
 <!-- Parent: ../AGENTS.md -->
 <!-- Generated: 2026-06-29 | Updated: 2026-06-29 -->
 
-# dataservice - K 线数据服务
+# qdata - K 线数据服务
 
 ## Purpose
 **高性能 K 线数据服务**。基于 Rust 实现，通过 gRPC Arrow Flight 协议 (:50001) 提供行情 K 线数据。是 quant-lab 和 atlas 的核心数据来源之一。
@@ -13,7 +13,7 @@ TDengine / PostgreSQL (K线原始数据)
         │
         ▼
 ┌─────────────────────────┐
-│  dataservice (Rust)      │
+│  qdata (Rust)      │
 │  gRPC Arrow Flight :50001│
 │                          │
 │  高性能 K 线数据查询      │
@@ -49,7 +49,7 @@ TDengine / PostgreSQL (K线原始数据)
 
 | 问题 | 排查方向 |
 |------|----------|
-| K 线数据查询失败 | 检查 dataservice 是否运行 (:50001) |
+| K 线数据查询失败 | 检查 qdata 是否运行 (:50001) |
 | 数据返回慢 | TDengine 查询性能 / 网络延迟 |
 | 某只股票没数据 | 检查该股票在 TDengine/PostgreSQL 中是否有记录 |
 | 数据不准确 | 上游数据源 → atlas/consumer K 线入库逻辑 |

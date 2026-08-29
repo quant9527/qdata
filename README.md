@@ -6,19 +6,19 @@ supported freqs: 1d,2h,1h,30m,15m,5m
 镜像构建与运行时都基于 `tdengine/tsdb`，libtaos 由官方安装，无需拷贝和补丁：
 
 ```bash
-docker build -t dataservice:dev .
+docker build -t qdata:dev .
 docker run --rm --network host --user 0 \
     --entrypoint /app/data-service \
     -e TDENGINE_HOST=localhost:6030 \
     -e TDENGINE_DB=kline \
-    dataservice:dev
+    qdata:dev
 ```
 
-`tdengine/tsdb` 的 ENTRYPOINT 默认是 `taosd`，上面用 `--entrypoint` 覆盖为我们编译出的二进制，并用 `--user 0` 绕过 taosd 启动时对 `/var/log/taos` 的写权限检查（dataservice 本身不需要那些路径）。生产部署建议同镜像族跑 taosd 与 dataservice 各一个容器，版本完全对齐（`TAOS_VERSION`）。
+`tdengine/tsdb` 的 ENTRYPOINT 默认是 `taosd`，上面用 `--entrypoint` 覆盖为我们编译出的二进制，并用 `--user 0` 绕过 taosd 启动时对 `/var/log/taos` 的写权限检查（qdata 本身不需要那些路径）。生产部署建议同镜像族跑 taosd 与 qdata 各一个容器，版本完全对齐（`TAOS_VERSION`）。
 
 ## 本地开发（无 Docker）
 
-需要：Rust 1.96 toolchain、本机已运行 TDengine（端口 6030）。dataservice 通过 dlopen 加载 `libtaos.so`，所以本机也需要装一份（deb 包或从镜像拷出）。
+需要：Rust 1.96 toolchain、本机已运行 TDengine（端口 6030）。qdata 通过 dlopen 加载 `libtaos.so`，所以本机也需要装一份（deb 包或从镜像拷出）。
 
 ```bash
 TAOS_VERSION=3.4.1.6
@@ -31,7 +31,7 @@ docker cp tdengine-tmp:/usr/local/lib/libtaosnative.so*  ~/.local/lib/taos/
 docker cp tdengine-tmp:/etc/taos/taos.cfg                ~/.local/taos/cfg/
 docker rm tdengine-tmp
 
-# 2. 让 dataservice 在 rootless 环境能找到 libtaos 和配置/日志目录
+# 2. 让 qdata 在 rootless 环境能找到 libtaos 和配置/日志目录
 cargo run
 ```
 

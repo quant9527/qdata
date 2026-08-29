@@ -1,17 +1,17 @@
 # ADR 0001: K 线 Arrow 输出增加 MA/MACD 段 struct 列
 
 - **状态**：已锁定（用户 2026-07-29 grill-with-docs 多轮访谈后落地）
-- **范围**：dataservice Arrow Flight `do_get` 返回的 Kline RecordBatch
+- **范围**：qdata Arrow Flight `do_get` 返回的 Kline RecordBatch
 
 ## 背景
 
-dataservice 已有 Kline 指标列（MA5/MA10/MA20/MA60/MA120/MA250、MACD、DIF、DEA、Bollinger、jc/sc 布尔列）。下游 quant-lab 在 `lab/chan.py::SegUtil` 里把 jc/sc 布尔列转换成"段"对象（Seg），再消费段的 start/end/high/low/jc/sc/close_min/close_max 做策略。
+qdata 已有 Kline 指标列（MA5/MA10/MA20/MA60/MA120/MA250、MACD、DIF、DEA、Bollinger、jc/sc 布尔列）。下游 quant-lab 在 `lab/chan.py::SegUtil` 里把 jc/sc 布尔列转换成"段"对象（Seg），再消费段的 start/end/high/low/jc/sc/close_min/close_max 做策略。
 
-**问题**：当前段计算在 quant-lab 端做，需要它先全量消费 K 线才能产出段结果，跨服务往返、不可由 dataservice 单边优化。
+**问题**：当前段计算在 quant-lab 端做，需要它先全量消费 K 线才能产出段结果，跨服务往返、不可由 qdata 单边优化。
 
 ## 决策
 
-dataservice 直接在生成 RecordBatch 时为每根 K 线计算"它所属的段"，作为四个 nullable 列输出：
+qdata 直接在生成 RecordBatch 时为每根 K 线计算"它所属的段"，作为四个 nullable 列输出：
 - `ma_segment`: MA5/MA10 段（Struct）
 - `macd_segment`: DIF/DEA 段（Struct）
 - `ma_recent_seg_bars`: 最近 N 个已结束 MA5/MA10 段结束点 K 线 idx（List<Int64>）
@@ -82,7 +82,7 @@ N 来自 `DatasetTicket.recent_seg_n`，默认 20。
 | 方案 | 否决理由 |
 |---|---|
 | 沿用 quant-lab `_find_seg_by_indices` 批量算法（O(n²) 最坏） | 与本任务"逐 bar O(n)"指令冲突 |
-| 在 Flight 客户端做段计算 | quant-lab 端已有现成实现，但 dataservice 单边加列可省下游一次扫表 |
+| 在 Flight 客户端做段计算 | quant-lab 端已有现成实现，但 qdata 单边加列可省下游一次扫表 |
 | 同时输出进行中段（end=last_idx） | 与"只输出已结束段"锁定冲突 |
 | 不加 struct 列、改加 jc_idx/sc_idx/end_idx/start_idx/high/low/close_min/close_max 八列 | schema 不可读、与 quant-lab Seg 不对位；下游需自己组装 |
 | struct 字段命名用语义化（jc_bar_idx 等） | 与 quant-lab 拼写不对齐，下游消费无法 1:1 |
@@ -99,7 +99,7 @@ N 来自 `DatasetTicket.recent_seg_n`，默认 20。
 
 ## 反向成本
 
-- 段定义若要调整（如改 close_min 区间），需要改 dataservice + 重发 arrow schema；下游消费者需同步更新
+- 段定义若要调整（如改 close_min 区间），需要改 qdata + 重发 arrow schema；下游消费者需同步更新
 - struct 列带来 ~80 bytes/row 额外开销；List 列每行 ~32 bytes 头部 + 8 bytes × seg count（按 N=20 满载、100w 行 ≈ 16GB，量化进 qps）
 - 调高 N 会线性放大 List 列带宽
 
