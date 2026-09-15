@@ -279,6 +279,15 @@ impl TDEngine {
             }
             None => {
                 tracing::info!("No data found for query, returning empty series");
+                // 发送一个空 series，保证 Flight 流包含 schema 消息，
+                // 客户端可以正常读到空表而不是协议错误。
+                if let Some((exchange, symbol, freq)) = ticket.tags.first().and_then(|t| {
+                    crate::flight_service::DatasetTicket::parse_tag(t)
+                        .ok()
+                        .map(|(e, s, f)| (e.to_string(), s.to_string(), f.to_string()))
+                }) {
+                    Self::send_or_warn(&tx, Ok(KlineSeries::new(exchange, symbol, freq))).await;
+                }
             }
         }
         let last_data_time = query_start_time.elapsed().as_millis();

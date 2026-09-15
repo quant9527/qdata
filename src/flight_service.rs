@@ -34,12 +34,29 @@ pub struct DatasetTicket {
     pub recent_seg_n: usize,
 }
 
+/// 已知的周期后缀（长在前，保证 `1d_utc` 优先于 `1d` 匹配）。
+/// freq 本身可能含下划线（如 `1d_utc`），symbol 也可能含下划线，
+/// 因此不能简单按最后一个 `_` 切分，必须按已知周期集合匹配后缀。
+const KNOWN_FREQS: &[&str] = &[
+    "1d_utc", "12h", "30m", "15m", "1w", "1M", "8h", "6h", "4h", "3h", "2h", "1h", "5m", "3m",
+    "2m", "1m", "1d",
+];
+
 impl DatasetTicket {
     /// Parse a tag string "exchange_symbol_freq" into its three components.
-    /// Uses split_once/rsplit_once to handle symbols that may contain underscores.
+    /// Prefers a known freq suffix (freq may contain '_', e.g. `1d_utc`);
+    /// falls back to splitting on the last '_' for unknown freqs.
     pub fn parse_tag(tag: &str) -> anyhow::Result<(&str, &str, &str)> {
         let (exchange, rest) = tag.split_once('_')
             .ok_or_else(|| anyhow::anyhow!("Invalid tag format '{}': expected exchange_symbol_freq", tag))?;
+        for freq in KNOWN_FREQS {
+            let suffix = format!("_{}", freq);
+            if let Some(symbol) = rest.strip_suffix(&suffix) {
+                if !symbol.is_empty() {
+                    return Ok((exchange, symbol, freq));
+                }
+            }
+        }
         let (symbol, freq) = rest.rsplit_once('_')
             .ok_or_else(|| anyhow::anyhow!("Invalid tag format '{}': expected exchange_symbol_freq", tag))?;
         Ok((exchange, symbol, freq))
@@ -57,9 +74,9 @@ async fn kline_data_to_record_batch(
 ) -> Result<RecordBatch, anyhow::Error> {
     let mut kline_data = kline_data;
 
-    if kline_data.is_empty() && !kline_snapshot {
-        return Err(anyhow::anyhow!("Empty kline data"));
-    }
+    // 空数据不再报错：允许继续走快照/空表逻辑，最终返回 0 行的 RecordBatch。
+    // 这样 Flight 流至少包含 schema 消息，客户端 read_pandas() 得到空表
+    // 而不是 "Server never sent a data message" 协议错误。
 
     // If kline_snapshot is enabled, try to get the latest snapshot from Redis
     if kline_snapshot {
@@ -125,7 +142,14 @@ async fn kline_data_to_record_batch(
     }
 
     if kline_data.is_empty() {
-        return Err(anyhow::anyhow!("Empty kline data"));
+        // 无数据：返回带 schema 的空表，保持 Flight 协议兼容
+        let proc = KlineProcessor::new(
+            &kline_data.exchange,
+            &kline_data.symbol,
+            &kline_data.freq,
+            factors,
+        );
+        return proc.create_record_batch();
     }
 
     // 1. 创建 KlineProcessor 并直接加载数据
@@ -407,5 +431,36 @@ impl FlightService for KlineFlightService {
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Self::ListActionsStream>, Status> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_tag_handles_freq_with_underscore() {
+        // 回归：1d_utc 含下划线，旧逻辑 rsplit_once 会解析成 symbol=BTCUSDT_1d, freq=utc
+        let (e, s, f) = DatasetTicket::parse_tag("hyperliquid_BTCUSDT_1d_utc").unwrap();
+        assert_eq!((e, s, f), ("hyperliquid", "BTCUSDT", "1d_utc"));
+    }
+
+    #[test]
+    fn parse_tag_regular_freqs() {
+        for (tag, expect) in [
+            ("binance_BTCUSDT_1h", ("binance", "BTCUSDT", "1h")),
+            ("as_000001_1d", ("as", "000001", "1d")),
+            ("hyperliquid_1000PEPE_USDT_15m", ("hyperliquid", "1000PEPE_USDT", "15m")),
+            ("as_000001_12h", ("as", "000001", "12h")),
+        ] {
+            let (e, s, f) = DatasetTicket::parse_tag(tag).unwrap();
+            assert_eq!((e, s, f), expect, "tag={}", tag);
+        }
+    }
+
+    #[test]
+    fn parse_tag_unknown_freq_falls_back() {
+        let (e, s, f) = DatasetTicket::parse_tag("ex_SYM_customfreq").unwrap();
+        assert_eq!((e, s, f), ("ex", "SYM", "customfreq"));
     }
 }
