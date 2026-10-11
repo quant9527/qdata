@@ -138,7 +138,9 @@ impl TDEngine {
         }
 
         let sql = format!(
-            "SELECT exchange, symbol, freq, ts, o, c, h, l, v, qv, end_ts \
+            // kline 库 o/c/h/l 已由 DOUBLE 重建为 DECIMAL(38,18)，
+            // SQL 层 cast 回 DOUBLE 以保持 BorrowedValue::Double 解析路径不变（下游精度语义与旧库一致）
+            "SELECT exchange, symbol, freq, ts, CAST(o AS DOUBLE), CAST(c AS DOUBLE), CAST(h AS DOUBLE), CAST(l AS DOUBLE), v, qv, end_ts \
              FROM {}.{} \
              WHERE ts>={} AND ts<={} \
              AND source !=1 AND exchange IN ({}) AND symbol IN ({}) AND freq IN ({}) \
